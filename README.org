@@ -1,0 +1,5 @@
+* Todo
+- make =list= a subcommand, with flags ~all(bool)~ and the default(only
+  show deleted hosts)
+  + with ~all~, print added and deleted sites *seperately*
+- use ~errors.Is~ to detect *permission denied* error

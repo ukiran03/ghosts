@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 )
 
@@ -17,26 +18,99 @@ const (
 )
 
 var (
-	SOCIAL_HOSTS  = "testdata/source.txt"
-	DEFAULT_HOSTS = "testdata/default.txt"
-	CONFIG_FILE   = "testdata/config"
-	ETC_HOSTS     = "testdata/etc/hosts"
+	SOCIAL_HOSTS  = "/home/ukiran/.config/ghosts/socials.hosts"
+	DEFAULT_HOSTS = "/home/ukiran/.config/ghosts/default.hosts"
+	CONFIG_FILE   = "/home/ukiran/.config/ghosts/config"
+	ETC_HOSTS     = "/etc/hosts" // root
+)
+
+const Help = `
+ghosts [option] [flag] [args]
+    add:    add a site to the Hosts
+            '--all' flag adds all the sites
+    del:    delete a site from the Hosts
+            '--all' flag deletes all sites
+    list:   lists the sites that are added and deleted
+    help:   help that you see`
+
+var (
+	SocialMap = GhostMap{data: make(map[string][]string)}
+	ConfigMap = GhostMap{data: make(map[string][]string)}
 )
 
 var (
-	list = flag.Bool("list", false, "list all SM domains")
-	add  = flag.String("add", "", "add a domain to Hosts")
-	del  = flag.String("del", "", "delete a domain from Hosts")
+	addCmd = flag.NewFlagSet("add", flag.ExitOnError)
+	addAll = addCmd.Bool("all", false, "add all sites to Hosts")
+	delCmd = flag.NewFlagSet("del", flag.ExitOnError)
+	delAll = delCmd.Bool("all", false, "del all sites from Hosts")
 )
 
-var (
-	ConfigMap = GhostMap{
-		data: make(map[string][]string),
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: \t%v\n", Help)
+		os.Exit(1)
 	}
-	SocialMap = GhostMap{
-		data: make(map[string][]string),
+
+	switch os.Args[1] {
+	case "add":
+		addCmd.Parse(os.Args[2:])
+		if *addAll {
+			maps.Copy(ConfigMap.data, SocialMap.data)
+		} else {
+			args := addCmd.Args()
+			if len(args) != 0 {
+				for _, arg := range args {
+					if yes := SocialMap.IsExists(arg); !yes {
+						log.Fatalf("source hosts: %v, no such Host\n", arg)
+					}
+					if yes := ConfigMap.IsExists(arg); yes {
+						fmt.Fprintf(os.Stdout, "config: %v, already added\n", arg)
+					}
+					ConfigMap.data[arg] = SocialMap.data[arg]
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Given No argument\n")
+				os.Exit(1)
+			}
+		}
+		err := SaveConfigAndHosts()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	case "del":
+		delCmd.Parse(os.Args[2:])
+		if *delAll {
+			ConfigMap.data = make(map[string][]string) // Reset
+		} else {
+			args := delCmd.Args()
+			if len(args) != 0 {
+				for _, arg := range args {
+					if yes := SocialMap.IsExists(arg); !yes {
+						log.Fatalf("source hosts: %v, no such Host", arg)
+					}
+					if yes := ConfigMap.IsExists(arg); !yes {
+						log.Fatalf("config: %v, no such Host", arg)
+					}
+					delete(ConfigMap.data, arg)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Given No argument\n")
+				os.Exit(1)
+			}
+		}
+		err := SaveConfigAndHosts()
+		if err != nil {
+			log.Fatal(err)
+		}
+	case "list":
+		fmt.Println(printListView(SocialMap, ConfigMap))
+	case "help":
+		fmt.Printf("Usage: \t%v\n", Help)
+	default:
+		fmt.Fprintf(os.Stderr, "Usage: \t%v\n", Help)
 	}
-)
+}
 
 func init() {
 	// Social Media Map
@@ -52,44 +126,7 @@ func init() {
 	flag.Parse()
 }
 
-func main() {
-	switch {
-	case *list:
-		fmt.Println(printListView(SocialMap, ConfigMap))
-	case *add != "":
-		if yes := SocialMap.IsExists(*add); !yes {
-			log.Fatalf("source hosts: %v, no such Host", *add)
-		}
-		if yes := ConfigMap.IsExists(*add); yes {
-			fmt.Fprintf(os.Stdout, "config: %v, already added\n", *add)
-			return
-		}
-		ConfigMap.data[*add] = SocialMap.data[*add]
-		err := SaveConfigAndHosts()
-		if err != nil {
-			log.Fatal(err)
-		}
-	case *del != "":
-		if yes := SocialMap.IsExists(*del); !yes {
-			log.Fatalf("source hosts: %v, no such Host", *del)
-		}
-		if yes := ConfigMap.IsExists(*del); !yes {
-			log.Fatalf("config: %v, no such Host", *del)
-		}
-		delete(ConfigMap.data, *del)
-		err := SaveConfigAndHosts()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-}
-
 func SaveConfigAndHosts() error {
-	// write to config
-	// write DEFAULT to hosts
-	// write/append SOCIAL to hosts
-
-	// For writing the Default hosts
 	defHostFile, err := os.Open(DEFAULT_HOSTS)
 	if err != nil {
 		return fmt.Errorf("Error opening file: %v", err)
@@ -103,7 +140,6 @@ func SaveConfigAndHosts() error {
 	defer etcHostFile.Close()
 
 	writer := bufio.NewWriter(etcHostFile)
-
 	_, err = io.Copy(writer, defHostFile)
 	if err != nil {
 		return fmt.Errorf("Error copying existing data: %v", err)
@@ -111,23 +147,26 @@ func SaveConfigAndHosts() error {
 
 	_, _ = writer.WriteString("\n##### GHOSTS #####\n")
 
-	// append the SM hosts
+	// Append the SM hosts
 	_, err = writer.WriteString(ConfigMap.String())
 	if err != nil {
 		return fmt.Errorf("Error writing new data: %v", err)
 	}
-
 	err = writer.Flush()
 	if err != nil {
 		return fmt.Errorf("Error flusing data: %v", err)
 	}
-	fmt.Fprintln(os.Stdout, "Data successfully written to /etc/hosts")
 
-	result := ConfigMap.List()
-	err = os.WriteFile(CONFIG_FILE, []byte(result), 0644)
+	// Write to Config
+	configFile, err := os.Create(CONFIG_FILE)
 	if err != nil {
-		return fmt.Errorf("Error writing config: %v", err)
+		return fmt.Errorf("Error creating config file: %v", err)
 	}
-	fmt.Fprintln(os.Stdout, "Config successfully written to config")
+	defer configFile.Close()
+	configData := ConfigMap.List()
+	_, err = configFile.WriteString(configData)
+	if err != nil {
+		return fmt.Errorf("Error writing config file: %v", err)
+	}
 	return nil
 }
