@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 )
@@ -15,9 +17,10 @@ const (
 )
 
 var (
-	SOURCE_FILE = "testdata/source.txt"
-	CONFIG_FILE = "testdata/config"
-	HOST_FILE   = "testdata/etc/hosts"
+	SOCIAL_HOSTS  = "testdata/source.txt"
+	DEFAULT_HOSTS = "testdata/default.txt"
+	CONFIG_FILE   = "testdata/config"
+	ETC_HOSTS     = "testdata/etc/hosts"
 )
 
 var (
@@ -27,22 +30,22 @@ var (
 )
 
 var (
-	Cmap = GhostMap{
+	ConfigMap = GhostMap{
 		data: make(map[string][]string),
 	}
-	SMmap = GhostMap{
+	SocialMap = GhostMap{
 		data: make(map[string][]string),
 	}
 )
 
 func init() {
 	// Social Media Map
-	err := populateSocialMap(SOURCE_FILE, SMmap)
+	err := populateSocialMap(SOCIAL_HOSTS, SocialMap)
 	if err != nil {
 		log.Fatalf("Error parsing SM hosts file: %q", err)
 	}
 	// Config Map
-	err = populateConfigMap(CONFIG_FILE, Cmap, SMmap)
+	err = populateConfigMap(CONFIG_FILE, ConfigMap, SocialMap)
 	if err != nil {
 		log.Fatalf("Error parsing config file: %q", err)
 	}
@@ -52,40 +55,79 @@ func init() {
 func main() {
 	switch {
 	case *list:
-		fmt.Println(printListView(SMmap, Cmap))
+		fmt.Println(printListView(SocialMap, ConfigMap))
 	case *add != "":
-		if yes := SMmap.IsExists(*add); !yes {
+		if yes := SocialMap.IsExists(*add); !yes {
 			log.Fatalf("source hosts: %v, no such Host", *add)
 		}
-		if yes := Cmap.IsExists(*add); yes {
+		if yes := ConfigMap.IsExists(*add); yes {
 			fmt.Fprintf(os.Stdout, "config: %v, already added\n", *add)
 			return
 		}
-		Cmap.data[*add] = SMmap.data[*add]
-		err := saveConfig()
+		ConfigMap.data[*add] = SocialMap.data[*add]
+		err := SaveConfigAndHosts()
 		if err != nil {
 			log.Fatal(err)
 		}
 	case *del != "":
-		if yes := SMmap.IsExists(*del); !yes {
+		if yes := SocialMap.IsExists(*del); !yes {
 			log.Fatalf("source hosts: %v, no such Host", *del)
 		}
-		if yes := Cmap.IsExists(*del); !yes {
+		if yes := ConfigMap.IsExists(*del); !yes {
 			log.Fatalf("config: %v, no such Host", *del)
 		}
-		delete(Cmap.data, *del)
-		err := saveConfig()
+		delete(ConfigMap.data, *del)
+		err := SaveConfigAndHosts()
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 }
 
-func saveConfig() error {
-	result := Cmap.List()
-	err := Cmap.SaveToFile(HOST_FILE)
+func SaveConfigAndHosts() error {
+	// write to config
+	// write DEFAULT to hosts
+	// write/append SOCIAL to hosts
+
+	// For writing the Default hosts
+	defHostFile, err := os.Open(DEFAULT_HOSTS)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error opening file: %v", err)
 	}
-	return os.WriteFile(CONFIG_FILE, []byte(result), 0644)
+	defer defHostFile.Close()
+
+	etcHostFile, err := os.Create(ETC_HOSTS)
+	if err != nil {
+		return fmt.Errorf("Error creating output file: %v", err)
+	}
+	defer etcHostFile.Close()
+
+	writer := bufio.NewWriter(etcHostFile)
+
+	_, err = io.Copy(writer, defHostFile)
+	if err != nil {
+		return fmt.Errorf("Error copying existing data: %v", err)
+	}
+
+	_, _ = writer.WriteString("\n##### GHOSTS #####\n")
+
+	// append the SM hosts
+	_, err = writer.WriteString(ConfigMap.String())
+	if err != nil {
+		return fmt.Errorf("Error writing new data: %v", err)
+	}
+
+	err = writer.Flush()
+	if err != nil {
+		return fmt.Errorf("Error flusing data: %v", err)
+	}
+	fmt.Fprintln(os.Stdout, "Data successfully written to /etc/hosts")
+
+	result := ConfigMap.List()
+	err = os.WriteFile(CONFIG_FILE, []byte(result), 0644)
+	if err != nil {
+		return fmt.Errorf("Error writing config: %v", err)
+	}
+	fmt.Fprintln(os.Stdout, "Config successfully written to config")
+	return nil
 }
