@@ -1,5 +1,26 @@
-* Todo
-- make =list= a subcommand, with flags ~all(bool)~ and the default(only
-  show deleted hosts)
-  + with ~all~, print added and deleted sites *seperately*
-- use ~errors.Is~ to detect *permission denied* error
+Interactive Tool to Deal with */etc/hosts*
+
+*** Premise
+I block all unwanted sites, including fake news, gambling, porn, and
+social media sites, which are sourced from [[https://github.com/StevenBlack/hosts][StevenBlack/hosts]]. However,
+occasionally, I need to access a website that has been blocked. To do
+this, I manually =mv= the ~/etc/hosts/~ file, access the sites, and
+then move it back. To simplify this process, I wrote this tool.
+
+*** How It Works
+- There are two files:
+  1. A default file containing static data that doesn’t change.
+  2. A "social" file that contains data which might change (i.e.,
+     sites that are temporarily allowed or blocked).
+
+- The tool tracks which sites are blocked and which are allowed based
+  on user input and the =config file=. After the process is complete,
+  the data from both files are combined and appended to the
+  destination file ~etc/hosts~.
+
+*** *Things to Do*
+- Add a =list= subcommand with flags:
+  1. =--all= (boolean): If true, print both added and deleted sites
+     *separately*. By default, only deleted sites are shown.
+- Use =errors.Is= to detect and handle *permission denied* errors more
+  effectively.
