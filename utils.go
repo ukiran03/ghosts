@@ -2,25 +2,24 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 )
 
-func parseSocialsToMap(hostFile string, sm map[string][]string) error {
-	file, err := os.Open(hostFile)
+func populateSocialMap(filename string, sm GhostMap) error {
+	file, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
-	var dName string
-	var dUrls []string
-	var SaveToMap = func() {
-		if dName != "" && len(dUrls) > 0 {
-			sm[dName] = dUrls
+	var domain string
+	var urls []string
+	var saveMap = func() {
+		if domain != "" && len(urls) > 0 {
+			sm.data[domain] = urls
 		}
 	}
-
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -28,38 +27,58 @@ func parseSocialsToMap(hostFile string, sm map[string][]string) error {
 			continue
 		}
 		if strings.HasPrefix(line, "# [") && strings.HasSuffix(line, "]") {
-			SaveToMap() // save current holding key
-			dName = line[3 : len(line)-1]
-			dUrls = []string{}
+			saveMap()
+			domain = line[3 : len(line)-1]
+			urls = []string{}
 		} else if strings.HasPrefix(line, "#") {
 			continue
 		} else {
 			fields := strings.Fields(line)
 			if len(fields) > 1 && fields[0] == "0.0.0.0" {
-				dUrls = append(dUrls, fields[1])
+				urls = append(urls, fields[1])
+			} else {
+				urls = append(urls, line)
 			}
 		}
 	}
-	SaveToMap()
+	saveMap()
 	if err := scanner.Err(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func parseConfigToMap(filename string, cm map[string]bool) error {
+func populateConfigMap(filename string, cm GhostMap, gm GhostMap) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		key := strings.TrimSpace(scanner.Text())
-		if state := cm[key]; !state {
-			cm[key] = true
+		domain := strings.TrimSpace(scanner.Text())
+		if len(domain) == 0 {
+			continue
 		}
+		if _, ok := gm.data[domain]; !ok {
+			return fmt.Errorf("config: %v, no such Host", domain)
+		}
+		cm.data[domain] = gm.data[domain]
+	}
+	if err := scanner.Err(); err != nil {
+		return err
 	}
 	return nil
+}
+
+func printListView(sm, cm GhostMap) string {
+	var builder strings.Builder
+	for domain := range sm.data {
+		if _, ok := cm.data[domain]; !ok {
+			builder.WriteString(fmt.Sprintf("%s%s%s\n", Red, domain, Reset))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s\n", domain))
+		}
+	}
+	return strings.TrimSpace(builder.String())
 }

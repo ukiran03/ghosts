@@ -1,132 +1,91 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"syscall"
 )
 
-// const ETC_HOSTS = "/etc/hosts"
-const ETC_HOSTS = "internal/etc.hosts"
+const (
+	Red   = "\033[31m"
+	Green = "\033[32m"
+	Blue  = "\033[34m"
+	Reset = "\033[0m"
+)
 
-var defaultGhosts = "internal/default.hosts"
-var hostFile = "internal/social.hosts"
-var configFile = "internal/config.hosts"
+var (
+	SOURCE_FILE = "testdata/source.txt"
+	CONFIG_FILE = "testdata/config"
+	HOST_FILE   = "testdata/etc/hosts"
+)
 
-var socialsMap = make(map[string][]string)
-var configMap = config{
-	data: make(map[string]bool),
-}
+var (
+	list = flag.Bool("list", false, "list all SM domains")
+	add  = flag.String("add", "", "add a domain to Hosts")
+	del  = flag.String("del", "", "delete a domain from Hosts")
+)
 
-var list = flag.Bool("list", false, "list running ghost sites")
-var add = flag.String("add", "", "add a ghost site")
-var delete = flag.String("del", "", "remove a ghost site")
-var listAll = flag.Bool("la", false, "list all ghost sites")
-
-func main() {
-	switch {
-	case len(os.Args) == 1:
-		flag.Usage()
-	case *list:
-		for key, yes := range configMap.data {
-			if yes {
-				fmt.Printf("%s (killing)\n", key)
-			}
-		}
-	case *listAll:
-		for key, _ := range socialsMap {
-			if state := configMap.data[key]; state {
-				fmt.Printf("%s (killing)\n", key)
-			} else {
-				fmt.Println(key)
-			}
-		}
-	case *add != "":
-		if urls, ok := socialsMap[*add]; ok {
-			configMap.add(*add)
-			_ = configMap.save(configFile)
-			writeEtcHosts(ETC_HOSTS, *add, urls)
-			fmt.Printf("%s ghost is released\n", *add)
-		} else {
-			fmt.Println("no such ghost")
-		}
-	case *delete != "":
-		if urls, ok := socialsMap[*delete]; ok {
-			configMap.delete(*delete)
-			_ = configMap.save(configFile)
-			writeEtcHosts(ETC_HOSTS, *add, urls)
-			fmt.Printf("%s ghost was killed\n", *add)
-		} else {
-			fmt.Println("no such ghost")
-		}
+var (
+	Cmap = GhostMap{
+		data: make(map[string][]string),
 	}
-}
+	SMmap = GhostMap{
+		data: make(map[string][]string),
+	}
+)
 
 func init() {
-
-	err := parseSocialsToMap(hostFile, socialsMap)
+	// Social Media Map
+	err := populateSocialMap(SOURCE_FILE, SMmap)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error parsing SM hosts file: %q", err)
 	}
-
-	for key, _ := range socialsMap {
-		configMap.data[key] = false
-	}
-	err = parseConfigToMap(configFile, configMap.data)
+	// Config Map
+	err = populateConfigMap(CONFIG_FILE, Cmap, SMmap)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error parsing config file: %q", err)
 	}
-
 	flag.Parse()
 }
 
-func writeEtcHosts(filename string, key string, urls []string) {
-	var buf bytes.Buffer
-	// write default hosts
-	def, err := os.ReadFile(defaultGhosts)
-	if err != nil {
-		fmt.Println("Error reading %v: %v", defaultGhosts, err)
-		return
-	}
-	_, err = buf.Write(def)
-	if err != nil {
-		fmt.Println("Error writing %v: %v", defaultGhosts, err)
-	}
-
-	// write un-released hosts
-	_, err = buf.WriteString("\n# [" + key + "]" + "\n")
-	if err != nil {
-		fmt.Println("Error writing strings to buffer:", err)
-		return
-	}
-	for _, url := range urls {
-		_, err = buf.WriteString("0.0.0.0" + " " + url + "\n")
-	}
-	if err != nil {
-		fmt.Println("Error writing strings to buffer:", err)
-		return
-	}
-
-	// open /etc/hosts
-	outputFile, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		if pathError, ok := err.(*os.PathError); ok && pathError.Err == syscall.EACCES {
-			fmt.Println("Permission denied: You do not have write access to this file or directory.")
-		} else {
-			fmt.Println("Error opening file:", err)
+func main() {
+	switch {
+	case *list:
+		fmt.Println(printListView(SMmap, Cmap))
+	case *add != "":
+		if yes := SMmap.IsExists(*add); !yes {
+			log.Fatalf("source hosts: %v, no such Host", *add)
 		}
-		return
+		if yes := Cmap.IsExists(*add); yes {
+			fmt.Fprintf(os.Stdout, "config: %v, already added\n", *add)
+			return
+		}
+		Cmap.data[*add] = SMmap.data[*add]
+		err := saveConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
+	case *del != "":
+		if yes := SMmap.IsExists(*del); !yes {
+			log.Fatalf("source hosts: %v, no such Host", *del)
+		}
+		if yes := Cmap.IsExists(*del); !yes {
+			log.Fatalf("config: %v, no such Host", *del)
+		}
+		delete(Cmap.data, *del)
+		err := saveConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	defer outputFile.Close()
+}
 
-	// Use io.Copy to copy buffer content to the file
-	_, err = io.Copy(outputFile, &buf)
+func saveConfig() error {
+	result := Cmap.List()
+	err := Cmap.SaveToFile(HOST_FILE)
 	if err != nil {
-		fmt.Println("Error copying buffer to file:", err)
-		return
+		return err
 	}
+	return os.WriteFile(CONFIG_FILE, []byte(result), 0644)
 }
