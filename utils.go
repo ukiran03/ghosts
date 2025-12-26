@@ -15,7 +15,7 @@ func populateSocialMap(filename string, sm GhostMap) error {
 	defer file.Close()
 	var domain string
 	var urls []string
-	var saveMap = func() {
+	saveMap := func() {
 		if domain != "" && len(urls) > 0 {
 			sm.data[domain] = urls
 		}
@@ -48,7 +48,7 @@ func populateSocialMap(filename string, sm GhostMap) error {
 	return nil
 }
 
-func populateConfigMap(filename string, cm GhostMap, gm GhostMap) error {
+func populateConfigMap(filename string, cm, gm GhostMap) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -72,13 +72,13 @@ func populateConfigMap(filename string, cm GhostMap, gm GhostMap) error {
 }
 
 func printListView(sm, cm GhostMap) string {
-	var builder strings.Builder
+	var locked, unlocked strings.Builder
 	for domain := range sm.data {
 		if _, ok := cm.data[domain]; !ok {
-			builder.WriteString(fmt.Sprintf("%s%s%s\n", Red, domain, Reset))
+			unlocked.WriteString(fmt.Sprintf("%s%s%s\n", Red, domain, Reset))
 		} else {
-			builder.WriteString(fmt.Sprintf("%s\n", domain))
+			locked.WriteString(fmt.Sprintf("%s\n", domain))
 		}
 	}
-	return strings.TrimSpace(builder.String())
+	return strings.TrimSpace(unlocked.String() + locked.String())
 }
