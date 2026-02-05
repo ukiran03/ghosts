@@ -109,6 +109,7 @@ func main() {
 		fmt.Printf("Usage: \t%v\n", Help)
 	default:
 		fmt.Fprintf(os.Stderr, "Usage: \t%v\n", Help)
+		os.Exit(1)
 	}
 }
 
