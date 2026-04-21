@@ -75,9 +75,9 @@ func printListView(sm, cm GhostMap) string {
 	var locked, unlocked strings.Builder
 	for domain := range sm.data {
 		if _, ok := cm.data[domain]; !ok {
-			unlocked.WriteString(fmt.Sprintf("%s%s%s\n", Red, domain, Reset))
+			fmt.Fprintf(&unlocked, "%s%s%s\n", Red, domain, Reset)
 		} else {
-			locked.WriteString(fmt.Sprintf("%s\n", domain))
+			fmt.Fprintf(&locked, "%s\n", domain)
 		}
 	}
 	return strings.TrimSpace(unlocked.String() + locked.String())

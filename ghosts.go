@@ -13,10 +13,10 @@ type GhostMap struct {
 func (gm *GhostMap) String() string {
 	var builder strings.Builder
 	for domain, urls := range gm.data {
-		builder.WriteString(fmt.Sprintf("# [%s]\n", domain))
+		fmt.Fprintf(&builder, "# [%s]\n", domain)
 		if len(urls) > 0 {
 			for _, u := range urls {
-				builder.WriteString(fmt.Sprintf("0.0.0.0 %s\n", u))
+				fmt.Fprintf(&builder, "0.0.0.0 %s\n", u)
 			}
 		}
 		builder.WriteString("\n")
@@ -34,13 +34,13 @@ func (gm *GhostMap) IsExists(key string) bool {
 }
 
 func (gm *GhostMap) SaveToFile(filename string) error {
-	return os.WriteFile(filename, []byte(gm.String()), 0644)
+	return os.WriteFile(filename, []byte(gm.String()), 0o644)
 }
 
 func (gm *GhostMap) List() string {
 	var builder strings.Builder
 	for domain := range gm.data {
-		builder.WriteString(fmt.Sprintf("%v\n", domain))
+		fmt.Fprintf(&builder, "%v\n", domain)
 	}
 	return strings.TrimSpace(builder.String())
 }
